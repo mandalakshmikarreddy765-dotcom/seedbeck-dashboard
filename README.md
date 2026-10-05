@@ -1,85 +1,23 @@
-#include <Arduino.h>
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <Wire.h>
-#include <LiquidCrystal_I2C.h>
-
-const char* ssid = "Wokwi-GUEST";
-const char* password = "";
-
-// Paste YOUR exact Beeceptor URL here:
-const char* serverUrl = "https://seedbeck-server.free.beeceptor.com/api/data";
-
-LiquidCrystal_I2C lcd(0x27, 16, 2);
-
-const float S_EST_MIN_THRESHOLD = 0.025f;
-const float R_INT_MAX_THRESHOLD = 3.500f;
-
-inline bool is_anomaly(float s_est, float r_int, float delta_t) {
-    if (s_est < S_EST_MIN_THRESHOLD || r_int > R_INT_MAX_THRESHOLD || delta_t < 10.0f) {
-        return true; 
-    }
-    return false;
-}
-
-#define PIN_TEMP_HOT   34
-#define PIN_TEMP_COLD  35
-#define PIN_POT_LOAD   32
-
-void setup() {
-  Serial.begin(115200);
-  pinMode(PIN_TEMP_HOT, INPUT);
-  pinMode(PIN_TEMP_COLD, INPUT);
-  pinMode(PIN_POT_LOAD, INPUT);
-
-  lcd.init();
-  lcd.backlight();
-  
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to Web Wi-Fi...");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nConnected to Cloud Web Gateway!");
-}
-
-void loop() {
-  int rawHot = analogRead(PIN_TEMP_HOT);
-  int rawCold = analogRead(PIN_TEMP_COLD);
-  int rawPot = analogRead(PIN_POT_LOAD);
-
-  float t_hot = map(rawHot, 0, 4095, 20, 100);
-  float t_cold = map(rawCold, 0, 4095, 10, 80);
-  float delta_t = t_hot - t_cold;
-  float v_oc = (delta_t > 0) ? (delta_t * 35.0f) : 0.0f;
-  float r_int = (rawPot / 4095.0f) * 5.5f + 0.5f;
-  float s_est = (delta_t > 1.0f) ? (v_oc / delta_t) / 1000.0f : 0.0f;
-
-  bool anomaly = is_anomaly(s_est, r_int, delta_t);
-
-  // Update LCD
-  lcd.setCursor(0, 0);
-  lcd.print("dT:"); lcd.print((int)delta_t); lcd.print("C R:"); lcd.print(r_int, 1); lcd.print("  ");
-  lcd.setCursor(0, 1);
-  lcd.print(anomaly ? "!! FAULT DETECTED!!" : "STATUS: HEALTHY ");
-
-  // Send POST request over Wi-Fi
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    http.begin(serverUrl);
-    http.addHeader("Content-Type", "application/json");
-
-    String jsonPayload = "{\"delta_t\":" + String(delta_t, 1) + 
-                         ",\"r_int\":" + String(r_int, 2) + 
-                         ",\"s_est\":" + String(s_est, 4) + 
-                         ",\"anomaly\":" + String(anomaly ? "true" : "false") + "}";
-
-    int httpCode = http.POST(jsonPayload);
-    Serial.print("Web Response Code: ");
-    Serial.println(httpCode);
-    http.end();
-  }
-
-  delay(2000);
-}
+Edge-AI Predictive Maintenance & Live Telemetry for TEC1-12706 Thermoelectric ModulesAn end-to-end Industrial Internet of Things (IIoT) telemetry and predictive maintenance pipeline designed for real-time monitoring and anomaly detection on TEC1-12706 Thermoelectric Coolers (TECs). The system captures thermal-electrical dynamics, computes physics-informed edge metrics on ESP32 microcontrollers, relays JSON telemetry over cloud REST APIs, and renders dynamic fault diagnostics on an interactive Streamlit dashboard.📸 System Architecture+-------------------+         HTTP POST         +-------------------+
+|  ESP32 Firmware   |  ======================>  |  Beeceptor Cloud  |
+| (Wokwi Simulator) |  (JSON Payload: ΔT, R, S) |  (HTTP Relay API) |
++-------------------+                           +-------------------+
+          |                                               |
+     16x2 LCD                                        HTTP GET
+   Local Alert                                            |
+          v                                               v
++-------------------+                           +-------------------+
+|  Fault Injection  |                           |   Streamlit App   |
+|  (Potentiometer)  |                           |  (Dashboard UI)   |
++-------------------+                           +-------------------+
+⚡ Key FeaturesPhysics-Informed Metrics Engine: Continuously tracks temperature gradient ($\Delta T$), internal degradation resistance ($R_{\text{int}}$), and estimated Seebeck coefficient ($S_{\text{est}}$) derived from voltage-current dynamics.Edge-Level Anomaly Detection: Real-time hardware fault detection triggered directly on the ESP32 when internal resistance exceeds $3.5\,\Omega$ or temperature threshold conditions are violated ($\Delta T < 10.0^\circ\text{C}$).Local Hardware Alert System: I2C-driven $16 \times 2$ LCD panel rendering instant system status updates (STATUS: HEALTHY vs. !! FAULT DET !!).Cloud Telemetry Pipeline: Lightweight HTTP POST JSON broadcasting pipeline interfacing seamlessly with REST API relay endpoints.Interactive Streamlit Dashboard: Modern web UI featuring live KPI metric cards, real-time Plotly time-series trendlines, dynamic status banners, and multi-mode operational support (Live Cloud vs. Simulated Demo).📊 Technical Specifications & Physics EquationsParameterGoverning Formula / MetricNominal RangeAnomaly ThresholdTemperature Gradient$\Delta T = T_{\text{hot}} - T_{\text{cold}}$$15.0^\circ\text{C} - 65.0^\circ\text{C}$$< 10.0^\circ\text{C}$Internal Resistance$R_{\text{int}} = \frac{V_{\text{load}}}{I_{\text{circuit}}}$$2.0\,\Omega - 3.4\,\Omega$$> 3.5\,\Omega$Seebeck Coefficient$S_{\text{est}} = \frac{V_{\text{oc}}}{\Delta T}$$0.030 - 0.055\,\text{V/K}$Negative Trend / Degradation📁 Repository Structure├── sketch.ino          # ESP32 C++ Firmware source code (Wokwi simulation)
+├── diagram.json        # Wokwi circuit schematics & pin mapping configuration
+├── app.py              # Streamlit Web Dashboard frontend application
+├── requirements.txt    # Python runtime dependencies
+└── README.md           # Project documentation and setup guide
+🛠️ Circuit Pinout & Hardware LayoutMicrocontroller: ESP32 DevKit V1Display: $16 \times 2$ Liquid Crystal Display with PCF8574 I2C Adapter (SDA $\rightarrow$ GPIO 21, SCL $\rightarrow$ GPIO 22)Sensor / Load Input: Potentiometer / Analog Resistance Sensor $\rightarrow$ GPIO 32Networking: Virtual ESP32 Wi-Fi Interface (Wokwi-GUEST)🚀 Getting Started1. Firmware & Hardware Simulation (Wokwi)Navigate to the Wokwi ESP32 Simulator.Create a new ESP32 project and import sketch.ino and diagram.json.Update the serverUrl string in sketch.ino with your target cloud endpoint:const char* serverUrl = "http://YOUR-ENDPOINT-NAME.free.beeceptor.com/api/data";
+Press Play to start the simulation. Verify HTTP 200 status codes in the Serial Monitor.2. Streamlit Dashboard LaunchClone the repository:git clone https://github.com/YOUR-USERNAME/TEC1-12706-Predictive-Maintenance.git
+cd TEC1-12706-Predictive-Maintenance
+Install dependencies:pip install -r requirements.txt
+Run the dashboard application:python -m streamlit run app.py
+Access the web dashboard at http://localhost:8501.🧪 Testing Edge Fault InjectionRun the Wokwi simulation and Streamlit application simultaneously.In the Wokwi canvas, click the potentiometer connected to GPIO 32 and rotate the knob clockwise past 60% to simulate internal resistance degradation ($R_{\text{int}} > 3.5\,\Omega$).Expected Results:Hardware LCD: Immediately flips line 2 to !! FAULT DET !!.Streamlit UI: The top status indicator updates to FAULT DETECTED, and a red warning banner appears across the top of the interface.🧰 Technology StackEmbedded Firmware: C++, ESP32 Core, HTTPClient, LiquidCrystal_I2C.Frontend Web Application: Python 3.10+, Streamlit, Plotly, Pandas, Requests.Protocols & Formats: REST API (HTTP GET/POST), JSON Payload structure.Simulation Platform: Wokwi IoT Platform.📜 LicenseDistributed under the MIT License. See LICENSE for more information.
